@@ -11,7 +11,7 @@ data class User(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long = 0,
-    val username: String,
+    val username: String, // Propiedad normal de la data class
     val passwordHash: String,
 
     @Enumerated(EnumType.STRING)

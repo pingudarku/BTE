@@ -1,4 +1,4 @@
-package com.balanzas_triunfo.BTE
+package com.balanzastriunfo.bte
 
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
@@ -7,5 +7,5 @@ import org.springframework.boot.runApplication
 class BteApplication
 
 fun main(args: Array<String>) {
-	runApplication<BteApplication>(*args)
+    runApplication<BteApplication>(*args)
 }

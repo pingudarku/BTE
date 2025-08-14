@@ -1,52 +1,68 @@
 package com.balanzastriunfo.bte.service
 
-import com.balanzastriunfo.bte.model.ActivityLog
-import com.balanzastriunfo.bte.repository.ActivityLogRepository
-import jakarta.transaction.Transactional
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import io.jsonwebtoken.Claims
+import io.jsonwebtoken.Jwts
+import io.jsonwebtoken.security.Keys
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.security.core.userdetails.UserDetails
 import org.springframework.stereotype.Service
-import java.io.ByteArrayOutputStream
-import java.time.LocalDateTime
+import java.util.Date
+import java.util.concurrent.TimeUnit
 
 @Service
-class ActivityLogService(private val activityLogRepository: ActivityLogRepository) {
+class JwtService {
 
-    @Transactional
-    fun logActivity(userId: Long?, username: String?, action: String, details: String?) {
-        val log = ActivityLog(userId = userId, username = username, action = action, details = details)
-        activityLogRepository.save(log)
+    @Value("\${jwt.secret}")
+    private lateinit var secretKey: String
+
+    private fun getSignInKey() = Keys.hmacShaKeyFor(secretKey.toByteArray())
+
+    private fun extractAllClaims(token: String): Claims {
+        return Jwts.parser()
+            .setSigningKey(getSignInKey())
+            .build()
+            .parseClaimsJws(token)
+            .body
     }
 
-    fun getAllActivityLogs(): List<ActivityLog> {
-        return activityLogRepository.findAll()
+    fun <T> extractClaim(token: String, claimsResolver: (Claims) -> T): T {
+        val claims = extractAllClaims(token)
+        return claimsResolver(claims)
     }
 
-    fun generateActivityReport(): ByteArray {
-        val logs = activityLogRepository.findAll()
-        val workbook = XSSFWorkbook()
-        val sheet = workbook.createSheet("Registro de Actividad")
+    fun extractUsername(token: String): String {
+        return extractClaim(token, Claims::getSubject)
+    }
 
-        val headerRow = sheet.createRow(0)
-        headerRow.createCell(0).setCellValue("ID")
-        headerRow.createCell(1).setCellValue("ID Usuario")
-        headerRow.createCell(2).setCellValue("Nombre de Usuario")
-        headerRow.createCell(3).setCellValue("Acción")
-        headerRow.createCell(4).setCellValue("Fecha y Hora")
-        headerRow.createCell(5).setCellValue("Detalles")
+    fun generateToken(userDetails: UserDetails): String {
+        val claims = mutableMapOf<String, Any>()
+        claims["roles"] = userDetails.authorities.map { it.authority }
+        return createToken(claims, userDetails.username)
+    }
 
-        logs.forEachIndexed { index, log ->
-            val row = sheet.createRow(index + 1)
-            row.createCell(0).setCellValue(log.id.toDouble())
-            row.createCell(1).setCellValue(log.userId?.toDouble() ?: 0.0)
-            row.createCell(2).setCellValue(log.username ?: "N/A")
-            row.createCell(3).setCellValue(log.action)
-            row.createCell(4).setCellValue(log.timestamp.toString())
-            row.createCell(5).setCellValue(log.details ?: "")
-        }
+    private fun createToken(claims: Map<String, Any>, subject: String): String {
+        val now = Date(System.currentTimeMillis())
+        val expiration = Date(now.time + TimeUnit.HOURS.toMillis(24))
 
-        val outputStream = ByteArrayOutputStream()
-        workbook.write(outputStream)
-        workbook.close()
-        return outputStream.toByteArray()
+        return Jwts.builder()
+            .setClaims(claims)
+            .setSubject(subject)
+            .setIssuedAt(now)
+            .setExpiration(expiration)
+            .signWith(getSignInKey())
+            .compact()
+    }
+
+    fun isTokenValid(token: String, userDetails: UserDetails): Boolean {
+        val username = extractUsername(token)
+        return (username == userDetails.username && !isTokenExpired(token))
+    }
+
+    private fun isTokenExpired(token: String): Boolean {
+        return extractExpiration(token).before(Date())
+    }
+
+    private fun extractExpiration(token: String): Date {
+        return extractClaim(token, Claims::getExpiration)
     }
 }
